@@ -1,0 +1,403 @@
+/*
+  Morse.cpp - Library for flashing Morse code.
+  Created by David A. Mellis, November 2, 2007.
+  Released into the public domain.
+*/
+
+#include "Arduino.h"
+#include <SPI.h>
+#include <TFT_eSPI.h> // Hardware-specific library
+#include <XPT2046.h>
+#include "OSDKeyboard.h"
+
+#define BLACK 0x0000
+#define WHITE 0xFFFF
+#define GREY  0x5AEB
+
+//in library file:
+
+extern char keyboardArray[64];
+
+void KeyBoard(long widht, long hight, char place)
+{
+    Serial.println("");
+    Serial.println("OSD Keyboard started");
+long placeMent = 0;
+int charCounter = 0 ; // cont and fill the keyboardArray
+ long colSpacing = widht/10 -1 ; /// 10 columns gives width/10 -1 = 23 (240 pixles)
+ long rowSpacing = hight/12 ;  /// 27; (240 pixles)
+ int charColOffset = 8;
+ int charRowOffset = 4;
+ int rowNumber = 0;
+ int colNumber = 0;
+ bool isToched = 0; // Software IRQ
+ int tochRow = 0;
+ int tochCol = 0 ;
+ bool shiftOn = 0;
+ char curSur = '_';
+ char curSurInv = ' ';
+ bool cursorTOGGLE  = 0 ;
+ unsigned long cursorHz = 500 ; /// in millisecond gives around 2 HZ blinking cursor
+ unsigned long cursorTimer = millis();
+ unsigned long cursorPreviusTimer = 0 ;
+ bool debuncerTOGGLE  = 0 ;
+ unsigned long debuncer = 200 ; /// in millisecond gives around 2 HZ blinking cursor
+ unsigned long debuncerTimer = millis();
+ unsigned long debuncerPreviusTimer = 0 ;
+ String TerminalString =  String("   AGGE OSD keyboard Ver 1.0");
+
+
+ /// place keyboard on top or bottom
+if (place == 't' || place == 'T'){
+    placeMent = 0;
+}
+else if (place == 'b' || place == 'B'){
+   placeMent = hight - rowSpacing * 5 -2 ;
+}
+
+char RowColChar [2][5][10] =    /// RowColChar [shiftOn][row][column]
+         {
+            {
+            {'1', '2', '3', '4', '5', '6', '7', '8', '9', '0'},
+            {'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'},
+            {'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'z'},
+            {' ', ' ', 'x', 'c', 'v', 'b', 'n', 'm', ' ', ' '},
+            {'+', '?', '[', '{', ' ', ' ', '}', ']', '$', '-'}
+            },
+            {
+            {'!', '@', '#', '$', '%', '^', '~', '`', '(', ')'},
+            {'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'},
+            {'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'Z'},
+            {' ', ' ', 'X', 'C', 'V', 'B', 'N', 'M', ' ', ' '},
+            {'=', '.', ':', '/', ' ', ' ', '|', ';', ',', '_'}
+            },
+
+        };
+
+/// init the TFT_eSPI lib
+  TFT_eSPI tft = TFT_eSPI();
+  tft.init();
+  //tft.setRotation(0);
+  tft.fillScreen(BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+/// init the XPT2046 touch lib
+  XPT2046 touch( D2, D1);
+  touch.begin(widht, hight);
+  touch.setCalibration(296, 1739, 1665, 334);
+  pinMode(LED_BUILTIN, OUTPUT);
+
+ /// Start up text in terminal window
+
+    tft.drawString(TerminalString , charColOffset,charRowOffset + hight /2 - rowSpacing, 2);
+    tft.drawRect(0, hight /2 - rowSpacing , widht-1, rowSpacing * 2,  TFT_GREEN);
+    delay(500);
+    tft.fillScreen(BLACK);
+
+/// Lets make some start up character buttons
+     while (rowNumber < 5 ){
+        /// Do some font line up offsets here !!!
+        for (colNumber=0; colNumber <= 10; colNumber++){
+            /// the Shift,Del and Space buttons are different so catch em'
+            if (rowNumber == 3 && colNumber == 0 ){
+                tft.drawRoundRect(colNumber + colNumber*colSpacing, placeMent + rowNumber + rowNumber*rowSpacing, 2*colSpacing -2, rowSpacing-2, 3,  TFT_BLUE);
+                    ///drawString(const char *string, int poX, int poY, int font),
+                tft.drawString("Shift",charColOffset + colNumber + colNumber*colSpacing,placeMent + charRowOffset + rowNumber + rowNumber*rowSpacing, 2);
+                colNumber++; // jump one
+            }
+            else if (rowNumber == 3 && colNumber == 8 ){
+                tft.drawRoundRect(colNumber + colNumber*colSpacing,placeMent + rowNumber + rowNumber*rowSpacing, 2*colSpacing -2, rowSpacing-2, 3,  TFT_BLUE);
+                    ///drawString(const char *string, int poX, int poY, int font),
+                tft.drawString("Del",charColOffset+ 7 + colNumber + colNumber*colSpacing,placeMent + charRowOffset + rowNumber + rowNumber*rowSpacing, 2);
+                colNumber++; // jump one
+            }
+            else if (rowNumber == 4 && colNumber == 4 ){
+                tft.drawRoundRect(colNumber + colNumber*colSpacing,placeMent + rowNumber + rowNumber*rowSpacing, 2*colSpacing -2, rowSpacing-2, 3,  TFT_BLUE);
+                    ///drawString(const char *string, int poX, int poY, int font),
+                tft.drawString("Space",(charColOffset - 3) + colNumber + colNumber*colSpacing,placeMent + charRowOffset + rowNumber + rowNumber*rowSpacing, 2);
+                colNumber++; // jump one
+            }
+            else {
+            tft.drawRoundRect(colNumber + colNumber*colSpacing,placeMent + rowNumber + rowNumber*rowSpacing, colSpacing-2, rowSpacing-2, 3,  TFT_BLUE);
+                ///drawRoundRect(int32_t x0, int32_t y0, int32_t w, int32_t h, int32_t radius, uint32_t color),
+            tft.drawChar(RowColChar[shiftOn][rowNumber][colNumber],charColOffset + colNumber + colNumber*colSpacing,placeMent + charRowOffset + rowNumber + rowNumber*rowSpacing,2);
+            }
+
+         }
+        rowNumber++;
+     }
+     rowNumber = 0; // reset for reuse
+digitalWrite(LED_BUILTIN, HIGH);
+/// The "terminal" window
+tft.drawRect(0, hight /2 - rowSpacing , widht-1, rowSpacing * 2,  TFT_GREEN);
+
+
+
+
+
+/// The initial graphics are drawn let us start the toch screen fetching and drawing
+ // Are we typing ?
+
+for( ; ; ) /// Loop forever until break
+    { // stay in the keyboard typing loop until break
+
+    delay(1); /// Feed the esp8266 soft watch dog
+
+
+    String TerminalString(keyboardArray);
+    TerminalString.remove(charCounter);
+    Serial.print(keyboardArray); //debug
+    Serial.print(":");           //debug
+    Serial.println(TerminalString.length());
+;
+    switch (isToched) { /// Highlight the tapped button
+        /*
+        /// debuncer
+        debuncerTimer = millis();
+        if (debuncerTimer - debuncerPreviusTimer >= debuncer) {
+
+            debuncerPreviusTimer = debuncerTimer;
+
+        if (debuncerTOGGLE ==  0) {
+            /// run code here
+            debuncerTOGGLE =  1;
+
+        } else {
+
+            debuncerTOGGLE =  0;
+
+        }
+        */
+
+        case 0: /// The terminal window
+
+            digitalWrite(LED_BUILTIN, HIGH);
+
+            tft.drawNumber(TerminalString.length(), charColOffset,charRowOffset + hight /2 + rowSpacing, 2);
+
+                /// Blinking cursor is nice
+                 cursorTimer = millis();
+
+                  if (cursorTimer - cursorPreviusTimer >= cursorHz) {
+
+                    cursorPreviusTimer = cursorTimer;
+
+                    if (cursorTOGGLE ==  0) {
+
+                        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+                        TerminalString.setCharAt(TerminalString.length(), curSurInv); // curSur
+                        TerminalString += curSurInv ;  // Space is not as wide as the widest letter "M"
+                        TerminalString += curSurInv ;
+                        TerminalString += curSurInv ;
+                        tft.drawString(TerminalString , charColOffset,charRowOffset + hight /2 - rowSpacing, 2);
+                        tft.drawRect(0, hight /2 - rowSpacing , widht-1, rowSpacing * 2,  TFT_GREEN);
+
+
+
+                        cursorTOGGLE =  1;
+
+                    } else {
+
+                        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+                        TerminalString += curSur;
+                        TerminalString += curSurInv ; // Space is not as wide as underscore
+                        tft.drawString(TerminalString , charColOffset,charRowOffset + hight /2 - rowSpacing, 2);
+                        tft.drawRect(0, hight /2 - rowSpacing , widht-1, rowSpacing * 2,  TFT_GREEN);
+
+                        cursorTOGGLE =  0;
+
+                        }
+                    }
+            break;
+        case 1:
+
+         /// debuncer
+            debuncerTimer = millis();
+            if (debuncerTimer - debuncerPreviusTimer >= debuncer) {
+
+                debuncerPreviusTimer = debuncerTimer;
+
+                if (debuncerTOGGLE ==  0) {
+
+                /// run code here
+
+
+                    debuncerTOGGLE =  1;
+
+                }
+                else {
+
+                    debuncerTOGGLE =  0;
+
+                }
+            }
+
+
+            if (tochRow == 3 && tochCol <= 1 ){
+                        int colCounter = 0 ; // temp counter
+                        int rowCounter = 0 ; // temp counter
+
+/// Switch shiftOn starts here
+                switch (shiftOn) {
+
+                    case 0:
+
+                        while (rowCounter < 5 ){
+                        /// Redraw every character "m" has to have extra cleaned !!!!
+                            for (colCounter=0; colCounter <= 10; colCounter++){
+                                /// Change all characters to unshifted ones
+                                tft.drawChar(RowColChar[shiftOn][rowCounter][colCounter],charColOffset + colCounter + colCounter*colSpacing,placeMent + charRowOffset + rowCounter + rowCounter*rowSpacing,2);
+                            }
+                            rowCounter++;
+                        }
+                        rowCounter = 0; // reset for reuse
+
+                        /// Retype Del and Space
+                        tft.drawString("Del",charColOffset+ 7 + 8 + 8*colSpacing,placeMent + charRowOffset + 3 + 3*rowSpacing, 2);
+                        tft.drawString("Space",(charColOffset - 3) + 4 + 4*colSpacing,placeMent + charRowOffset + 4 + 4*rowSpacing, 2);
+
+                        /// unhighlight Shift
+                        tft.fillRoundRect(0, placeMent + 3 + 3*rowSpacing, 2*colSpacing -2, rowSpacing-2, 3,  TFT_BLACK);
+                        tft.drawRoundRect(0, placeMent + 3 + 3*rowSpacing, 2*colSpacing -2, rowSpacing-2, 3,  TFT_BLUE);
+                        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+                        tft.drawString("Shift",charColOffset,placeMent + charRowOffset + 3 + 3*rowSpacing, 2);
+                        break;
+
+                   case 1:
+
+                        /// Redraw every character "M and W" has to have an smaller offset !!!!
+                        while (rowCounter < 5){
+                            for (colCounter=0; colCounter <= 10; colCounter++){
+                                tft.drawChar(RowColChar[shiftOn][rowCounter][colCounter],charColOffset + colCounter + colCounter*colSpacing,placeMent + charRowOffset + rowCounter + rowCounter*rowSpacing,2);
+                            }
+                            rowCounter++;
+                        }
+                        rowCounter = 0; // reset for reuse
+
+                        /// Retype Del and Space
+                        tft.drawString("Del",charColOffset+ 7 + 8 + 8*colSpacing,placeMent + charRowOffset + 3 + 3*rowSpacing, 2);
+                        tft.drawString("Space",(charColOffset - 3) + 4 + 4*colSpacing,placeMent + charRowOffset + 4 + 4*rowSpacing, 2);
+
+                        /// highlight Shift
+                        tft.fillRoundRect(0, placeMent + 3 + 3*rowSpacing, 2*colSpacing -2, rowSpacing-2, 3,  TFT_BLUE);
+                        tft.setTextColor(TFT_WHITE, TFT_BLUE);
+                        tft.drawString("Shift",charColOffset,placeMent + charRowOffset + 3 + 3*rowSpacing, 2);
+                        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+                        break;
+                }
+            }
+            else if (tochRow == 3 && tochCol >= 8 ){
+                tft.fillRoundRect(8 + 8*colSpacing,placeMent + tochRow + tochRow*rowSpacing, 2*colSpacing -2, rowSpacing-2, 3,  TFT_BLUE);
+                tft.setTextColor(TFT_WHITE, TFT_BLUE);
+                tft.drawString("Del",charColOffset+ 7 + 8 + 8*colSpacing,placeMent + charRowOffset + tochRow + tochRow*rowSpacing, 2);
+                delay(30);
+                tft.fillRoundRect(8 + 8*colSpacing,placeMent + tochRow + tochRow*rowSpacing, 2*colSpacing -2, rowSpacing-2, 3,  TFT_BLACK);
+                tft.drawRoundRect(8 + 8*colSpacing,placeMent + tochRow + tochRow*rowSpacing, 2*colSpacing -2, rowSpacing-2, 3,  TFT_BLUE);
+                tft.setTextColor(TFT_WHITE, TFT_BLACK);
+                tft.drawString("Del",charColOffset+ 7 + 8 + 8*colSpacing,placeMent + charRowOffset + tochRow + tochRow*rowSpacing, 2);
+
+            }
+            else if (tochRow == 4 && tochCol >= 4 && tochCol <=5){
+                tft.fillRoundRect(4+ 4*colSpacing,placeMent + 4 + 4*rowSpacing, 2*colSpacing -2, rowSpacing-2, 3,  TFT_BLUE);
+                tft.setTextColor(TFT_WHITE, TFT_BLUE);
+                tft.drawString("Space",(charColOffset - 3) + 4 + 4*colSpacing,placeMent + charRowOffset + tochRow + tochRow*rowSpacing, 2);
+                delay(30);
+                tft.fillRoundRect(4+ 4*colSpacing,placeMent + 4 + 4*rowSpacing, 2*colSpacing -2, rowSpacing-2, 3,  TFT_BLACK);
+                tft.drawRoundRect(4+ 4*colSpacing,placeMent + 4 + 4*rowSpacing, 2*colSpacing -2, rowSpacing-2, 3,  TFT_BLUE);
+                tft.setTextColor(TFT_WHITE, TFT_BLACK);
+                tft.drawString("Space",(charColOffset - 3) + 4 + 4*colSpacing,placeMent + charRowOffset + tochRow + tochRow*rowSpacing, 2);
+            }
+            else {
+                tft.fillRoundRect(tochCol + tochCol*colSpacing,placeMent + tochRow + tochRow*rowSpacing, colSpacing-2, rowSpacing-2, 3,  TFT_BLUE);
+                tft.setTextColor(TFT_WHITE, TFT_BLUE);
+                tft.drawChar(RowColChar[shiftOn][tochRow][tochCol],charColOffset + tochCol + tochCol*colSpacing,placeMent + charRowOffset + tochRow + tochRow*rowSpacing,2);
+                delay(30);
+                tft.fillRoundRect(tochCol + tochCol*colSpacing,placeMent + tochRow + tochRow*rowSpacing, colSpacing-2, rowSpacing-2, 3,  TFT_BLACK);
+                tft.drawRoundRect(tochCol + tochCol*colSpacing,placeMent + tochRow + tochRow*rowSpacing, colSpacing-2, rowSpacing-2, 3,  TFT_BLUE);
+                tft.setTextColor(TFT_WHITE, TFT_BLACK);
+                tft.drawChar(RowColChar[shiftOn][tochRow][tochCol],charColOffset + tochCol + tochCol*colSpacing,placeMent + charRowOffset + tochRow + tochRow*rowSpacing,2);
+            }
+            digitalWrite(LED_BUILTIN, LOW);
+            isToched = 0;
+            break;
+
+
+        digitalWrite(LED_BUILTIN, HIGH);
+        isToched = 0;
+    }
+/// Switch isToched ends here
+    while (touch.isTouching()) {
+       // digitalWrite(LED_BUILTIN, LOW);
+        isToched = 1 ;
+        uint16_t x, y;
+        touch.getPosition(x, y);  // x col y row
+        delay (300); // IRQ Debouncer
+
+    if (x > 0 && x < widht && y > 0 && y < placeMent + rowSpacing * 5 ) { /// Map touch to row and colomn and some ADC toch filtering
+
+        tochCol = map(x, 1, widht, 0, 10);                                  /// width
+        tochRow = map(y, placeMent+1, placeMent + rowSpacing * 5, 0, 5);    /// hight
+
+
+        if (charCounter > 64 ) { /// buffer overrun safety, fault state reset last char
+
+            charCounter = 63;
+
+            }
+
+            if (tochCol <=1 && tochRow == 3) { /// Is Shift hit ?
+
+                // Toggle, ad a triple toggle for a more qwerty look a like keyboard ?
+                if (shiftOn == 0){
+
+                    shiftOn = 1;
+                    }
+
+                else { shiftOn = 0; }
+
+                }
+
+            else if (tochCol >=8 && tochRow == 3) { /// is Del hit ?
+
+                if (charCounter > 0 ){
+                    --charCounter;
+                    if (charCounter <= 0){charCounter = 0;}
+
+
+                        keyboardArray[charCounter] = '\0';  // shorten the char array
+                        String TerminalString(keyboardArray);
+                        TerminalString += curSurInv ;
+                        TerminalString += curSurInv ;
+                        TerminalString += curSurInv ;
+                        tft.drawString(TerminalString , charColOffset,charRowOffset + hight /2 - rowSpacing, 2);
+                        TerminalString.remove(charCounter);
+                    }
+
+
+                }
+
+                else { /// Put the selected char in the array
+
+                    keyboardArray[charCounter] = RowColChar [shiftOn] [tochRow] [tochCol];
+                        String TerminalString(keyboardArray);
+                        TerminalString.remove(charCounter);
+                        tft.drawString(TerminalString , charColOffset,charRowOffset + hight /2 - rowSpacing, 2);
+
+                    charCounter++ ;
+
+                    break ;
+
+                }
+            }
+        }
+    }
+}
+
+void IRQTest(){
+
+Serial.print("Toch IRQ !!!!!!"); // Debugg
+}
+
+void EXTest(){
+
+Serial.print("EX test OK !!!!!!"); // Debugg
+}
